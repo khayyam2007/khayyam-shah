@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Bioluma — a game of light in the deep</title>
+<style>
+  :root{
+    --abyss-0:#02090c;
+    --abyss-1:#061c22;
+    --abyss-2:#0a3038;
+    --glow:#7ffcd8;      /* player bioluminescence */
+    --spore:#ffe29a;     /* collectible */
+    --danger:#ff5e8a;    /* predator */
+    --ui:#bff5ff;
+    --ui-dim:#4d7d86;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;overflow:hidden;background:var(--abyss-0)}
+  body{
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    color:var(--ui);
+    -webkit-user-select:none; user-select:none;
+    touch-action:none;
+  }
+  #stage{position:fixed;inset:0}
+  canvas{display:block;width:100%;height:100%;cursor:none}
+
+  /* ---- overlays ---- */
+  .screen{
+    position:fixed;inset:0;display:none;
+    flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;gap:1.4rem;padding:2rem;
+    background:radial-gradient(120% 90% at 50% 40%, rgba(6,28,34,.35), rgba(2,9,12,.86));
+    backdrop-filter:blur(2px);
+    z-index:10;
+    animation:fade .6s ease both;
+  }
+  .screen.show{display:flex}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+
+  .eyebrow{
+    font-size:.72rem;letter-spacing:.42em;text-transform:uppercase;
+    color:var(--ui-dim);font-weight:600;padding-left:.42em;
+  }
+  h1{
+    font-size:clamp(3rem,13vw,7rem);font-weight:300;line-height:.9;
+    letter-spacing:.02em;
+    color:var(--glow);
+    text-shadow:0 0 34px rgba(127,252,216,.55), 0 0 90px rgba(127,252,216,.25);
+  }
+  h1 .dot{color:var(--spore);text-shadow:0 0 30px rgba(255,226,154,.7)}
+  .tagline{max-width:34ch;line-height:1.6;color:#8fc6cf;font-weight:300;font-size:1rem}
+  .how{
+    display:flex;gap:1.6rem;flex-wrap:wrap;justify-content:center;
+    color:var(--ui-dim);font-size:.82rem;letter-spacing:.03em;margin-top:.2rem;
+  }
+  .how b{color:var(--ui);font-weight:500}
+
+  button{
+    font:inherit;cursor:pointer;color:var(--abyss-0);
+    background:var(--glow);
+    border:none;border-radius:100px;
+    padding:.95rem 2.6rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;font-size:.82rem;
+    box-shadow:0 0 40px rgba(127,252,216,.5);
+    transition:transform .15s ease, box-shadow .3s ease;
+  }
+  button:hover{transform:translateY(-2px);box-shadow:0 0 60px rgba(127,252,216,.75)}
+  button:active{transform:translateY(0)}
+  button:focus-visible{outline:3px solid var(--spore);outline-offset:4px}
+
+  .verdict{font-size:clamp(2.4rem,10vw,5rem);font-weight:200;color:var(--danger);
+    text-shadow:0 0 40px rgba(255,94,138,.5);letter-spacing:.01em}
+  .stat{display:flex;gap:3.2rem;align-items:flex-end;justify-content:center}
+  .stat .num{font-size:3rem;font-weight:300;color:var(--spore);line-height:1;
+    text-shadow:0 0 26px rgba(255,226,154,.4)}
+  .stat .lab{font-size:.68rem;letter-spacing:.32em;text-transform:uppercase;color:var(--ui-dim);margin-top:.5rem}
+
+  /* ---- HUD ---- */
+  #hud{
+    position:fixed;top:0;left:0;right:0;z-index:5;
+    display:flex;justify-content:space-between;align-items:flex-start;
+    padding:1.4rem 1.6rem;pointer-events:none;
+    opacity:0;transition:opacity .5s ease;
+  }
+  #hud.show{opacity:1}
+  .hud-block .lab{font-size:.6rem;letter-spacing:.34em;text-transform:uppercase;color:var(--ui-dim)}
+  .hud-block .val{font-size:2.1rem;font-weight:300;line-height:1;margin-top:.25rem;
+    font-variant-numeric:tabular-nums}
+  #score .val{color:var(--spore);text-shadow:0 0 22px rgba(255,226,154,.4)}
+  #depth{text-align:right}
+  #depth .val{color:var(--glow);text-shadow:0 0 22px rgba(127,252,216,.35)}
+  @media (prefers-reduced-motion: reduce){.screen{animation:none}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="c"></canvas>
+</div>
+
+<div id="hud">
+  <div class="hud-block" id="score"><div class="lab">Light gathered</div><div class="val">0</div></div>
+  <div class="hud-block" id="depth"><div class="lab">Depth</div><div class="val">0m</div></div>
+</div>
+
+<!-- Start -->
+<div class="screen show" id="startScreen">
+  <div class="eyebrow">A game of light in the deep</div>
+  <h1>Biolum<span class="dot">a</span></h1>
+  <p class="tagline">You are a spark drifting through the abyss. Gather the glowing spores. The jellies hunt the light — never let them touch you.</p>
+  <div class="how">
+    <span><b>Move</b> mouse / touch / WASD</span>
+    <span><b>Goal</b> collect gold</span>
+    <span><b>Avoid</b> the pink drift</span>
+  </div>
+  <button id="startBtn">Descend</button>
+</div>
+
+<!-- Game over -->
+<div class="screen" id="overScreen">
+  <div class="verdict">The light goes out</div>
+  <div class="stat">
+    <div><div class="num" id="finalScore">0</div><div class="lab">Light</div></div>
+    <div><div class="num" id="finalDepth">0m</div><div class="lab">Depth</div></div>
+    <div><div class="num" id="bestScore">0</div><div class="lab">Best</div></div>
+  </div>
+  <button id="againBtn">Descend again</button>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const hud = document.getElementById('hud');
+  const scoreVal = document.querySelector('#score .val');
+  const depthVal = document.querySelector('#depth .val');
+  const startScreen = document.getElementById('startScreen');
+  const overScreen = document.getElementById('overScreen');
+
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---- world sizing (DPR-aware) ----
+  let W = 0, H = 0, DPR = 1;
+  function resize(){
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * DPR; canvas.height = H * DPR;
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---- input ----
+  const pointer = { x: W/2, y: H/2, active:false };
+  function setPointer(x,y){ pointer.x = x; pointer.y = y; pointer.active = true; }
+  window.addEventListener('mousemove', e => setPointer(e.clientX, e.clientY));
+  window.addEventListener('touchmove', e => {
+    if(e.touches[0]) setPointer(e.touches[0].clientX, e.touches[0].clientY);
+  }, {passive:true});
+  window.addEventListener('touchstart', e => {
+    if(e.touches[0]) setPointer(e.touches[0].clientX, e.touches[0].clientY);
+  }, {passive:true});
+  const keys = {};
+  window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
+  window.addEventListener('keyup',   e => { keys[e.key.toLowerCase()] = false; });
+
+  // ---- helpers ----
+  const rand = (a,b) => a + Math.random()*(b-a);
+  const dist2 = (ax,ay,bx,by) => { const dx=ax-bx, dy=ay-by; return dx*dx+dy*dy; };
+  const clamp = (v,a,b) => v<a?a:v>b?b:v;
+
+  // ---- state ----
+  let state = 'menu'; // menu | play | over
+  let bestScore = 0;
+
+  const player = { x:0, y:0, vx:0, vy:0, r:11, trail:[] };
+  let spores = [], jellies = [], particles = [], snow = [];
+  let score = 0, depth = 0, elapsed = 0;
+  let spawnTimer = 0, jellyTimer = 0, shake = 0, invuln = 0;
+
+  // ambient marine snow — persists across states as background life
+  function seedSnow(){
+    snow = [];
+    const n = Math.round((W*H)/16000);
+    for(let i=0;i<n;i++){
+      snow.push({ x:rand(0,W), y:rand(0,H), r:rand(.4,1.8), s:rand(4,16), a:rand(.05,.35) });
+    }
+  }
+  seedSnow();
+
+  function reset(){
+    player.x = W/2; player.y = H/2; player.vx = 0; player.vy = 0; player.trail = [];
+    spores = []; jellies = []; particles = [];
+    score = 0; depth = 0; elapsed = 0;
+    spawnTimer = 0; jellyTimer = 0; shake = 0; invuln = 1.0;
+    for(let i=0;i<5;i++) addSpore();
+    for(let i=0;i<2;i++) addJelly(true);
+    pointer.x = player.x; pointer.y = player.y;
+  }
+
+  function addSpore(){
+    spores.push({ x:rand(40,W-40), y:rand(40,H-40), r:rand(5,8), phase:rand(0,6.28), born:0 });
+  }
+
+  function addJelly(faraway){
+    let x,y, tries=0;
+    do{ x=rand(0,W); y=rand(0,H); tries++; }
+    while(faraway && dist2(x,y,player.x,player.y) < 260*260 && tries<40);
+    jellies.push({
+      x, y,
+      vx:rand(-20,20), vy:rand(-20,20),
+      r:rand(15,26),
+      home:rand(6,26),          // homing strength, ramps difficulty via new spawns
+      phase:rand(0,6.28),
+      born:0
+    });
+  }
+
+  function burst(x,y,color,count,speed){
+    for(let i=0;i<count;i++){
+      const a = rand(0,6.283), sp = rand(speed*.3, speed);
+      particles.push({ x,y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:rand(.4,1), max:1, r:rand(1.5,3.5), color });
+    }
+  }
+
+  // ---- update ----
+  function update(dt){
+    elapsed += dt;
+    if(invuln>0) invuln -= dt;
+
+    // player movement: ease toward pointer, plus keyboard nudge
+    let tx = pointer.x, ty = pointer.y;
+    let kx=0, ky=0;
+    if(keys['a']||keys['arrowleft']) kx-=1;
+    if(keys['d']||keys['arrowright']) kx+=1;
+    if(keys['w']||keys['arrowup']) ky-=1;
+    if(keys['s']||keys['arrowdown']) ky+=1;
+    if(kx||ky){ tx = player.x + kx*260; ty = player.y + ky*260; }
+
+    const ease = 7.5;
+    player.vx += (tx - player.x) * ease * dt;
+    player.vy += (ty - player.y) * ease * dt;
+    player.vx *= 0.82; player.vy *= 0.82;
+    player.x = clamp(player.x + player.vx*dt, player.r, W-player.r);
+    player.y = clamp(player.y + player.vy*dt, player.r, H-player.r);
+
+    // trail
+    player.trail.push({x:player.x, y:player.y});
+    if(player.trail.length > 18) player.trail.shift();
+
+    depth += Math.hypot(player.vx,player.vy) * dt * 0.02;
+
+    // spawn cadence
+    spawnTimer -= dt;
+    if(spawnTimer<=0 && spores.length<9){ addSpore(); spawnTimer = rand(1.2,2.4); }
+    jellyTimer -= dt;
+    const jellyCap = 3 + Math.floor(elapsed/14);
+    if(jellyTimer<=0 && jellies.length<jellyCap){ addJelly(true); jellyTimer = rand(4,7); }
+
+    // spores
+    for(let i=spores.length-1;i>=0;i--){
+      const s = spores[i]; s.born += dt; s.phase += dt*2;
+      if(dist2(player.x,player.y,s.x,s.y) < (player.r+s.r+6)**2){
+        score++; scoreVal.textContent = score;
+        burst(s.x,s.y,'255,226,154',16,240);
+        player.r = Math.min(14, player.r + 0.12);
+        shake = Math.min(shake+3, 10);
+        spores.splice(i,1);
+      }
+    }
+
+    // jellies — drift, wall-bounce, gently home on the light
+    for(const j of jellies){
+      j.born += dt; j.phase += dt*1.5;
+      const dx = player.x-j.x, dy = player.y-j.y;
+      const d = Math.hypot(dx,dy)||1;
+      j.vx += (dx/d) * j.home * dt;
+      j.vy += (dy/d) * j.home * dt;
+      j.vx *= 0.985; j.vy *= 0.985;
+      const max = 70;
+      const sp = Math.hypot(j.vx,j.vy);
+      if(sp>max){ j.vx = j.vx/sp*max; j.vy = j.vy/sp*max; }
+      j.x += j.vx*dt; j.y += j.vy*dt;
+      if(j.x<j.r){j.x=j.r;j.vx*=-.7} if(j.x>W-j.r){j.x=W-j.r;j.vx*=-.7}
+      if(j.y<j.r){j.y=j.r;j.vy*=-.7} if(j.y>H-j.r){j.y=H-j.r;j.vy*=-.7}
+
+      if(invuln<=0 && dist2(player.x,player.y,j.x,j.y) < (player.r+j.r*0.72)**2){
+        gameOver();
+      }
+    }
+
+    // particles
+    for(let i=particles.length-1;i>=0;i--){
+      const p = particles[i];
+      p.x += p.vx*dt; p.y += p.vy*dt; p.vx*=0.94; p.vy*=0.94;
+      p.life -= dt;
+      if(p.life<=0) particles.splice(i,1);
+    }
+
+    // snow drift
+    for(const f of snow){
+      f.y -= f.s*dt;
+      f.x += Math.sin((elapsed+f.phase*0)*0.3 + f.y*0.01) * 4 * dt;
+      if(f.y < -4){ f.y = H+4; f.x = rand(0,W); }
+    }
+
+    shake *= 0.86;
+    depthVal.textContent = Math.round(depth) + 'm';
+  }
+
+  // ---- draw ----
+  function drawBackground(){
+    const g = ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,'#061c22');
+    g.addColorStop(0.55,'#04141a');
+    g.addColorStop(1,'#02090c');
+    ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+    // faint depth vignette
+    const rad = ctx.createRadialGradient(W/2,H*0.42,0,W/2,H*0.42,Math.max(W,H)*0.75);
+    rad.addColorStop(0,'rgba(10,48,56,0.18)');
+    rad.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle = rad; ctx.fillRect(0,0,W,H);
+  }
+
+  function drawSnow(){
+    for(const f of snow){
+      ctx.globalAlpha = f.a;
+      ctx.fillStyle = '#9fe8f2';
+      ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,6.283); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function glowCircle(x,y,r,color,blur,alpha){
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.shadowColor = color; ctx.shadowBlur = blur;
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(x,y,r,0,6.283); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawSpores(){
+    for(const s of spores){
+      const pulse = 1 + Math.sin(s.phase)*0.18;
+      const grow = Math.min(1, s.born*3);
+      glowCircle(s.x,s.y, s.r*pulse*grow, 'rgba(255,226,154,1)', 26, 0.95);
+      ctx.fillStyle='#fff7e0';
+      ctx.beginPath(); ctx.arc(s.x,s.y, s.r*0.4*grow,0,6.283); ctx.fill();
+    }
+  }
+
+  function drawJellies(){
+    for(const j of jellies){
+      const grow = Math.min(1, j.born*2);
+      const wob = Math.sin(j.phase)*0.14 + 1;
+      const R = j.r*grow;
+      // outer menace glow
+      glowCircle(j.x, j.y, R*wob, 'rgba(255,94,138,0.9)', 34, 0.5);
+      // bell
+      ctx.save();
+      const bg = ctx.createRadialGradient(j.x, j.y-R*0.2, 1, j.x, j.y, R*1.2);
+      bg.addColorStop(0,'rgba(255,150,185,0.9)');
+      bg.addColorStop(0.6,'rgba(255,94,138,0.55)');
+      bg.addColorStop(1,'rgba(120,20,60,0.05)');
+      ctx.fillStyle = bg;
+      ctx.beginPath();
+      ctx.ellipse(j.x, j.y-R*0.1, R*wob, R*0.85, 0, 0, 6.283);
+      ctx.fill();
+      // tentacles
+      ctx.strokeStyle = 'rgba(255,120,160,0.55)';
+      ctx.lineWidth = 2;
+      for(let t=-2;t<=2;t++){
+        ctx.beginPath();
+        const bx = j.x + t*R*0.28;
+        ctx.moveTo(bx, j.y+R*0.3);
+        ctx.quadraticCurveTo(
+          bx + Math.sin(j.phase+t)*6, j.y+R*0.9,
+          bx + Math.sin(j.phase+t*1.7)*10, j.y+R*1.5
+        );
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
+  function drawParticles(){
+    for(const p of particles){
+      const a = clamp(p.life/p.max,0,1);
+      glowCircle(p.x,p.y,p.r*a+0.4,`rgba(${p.color},1)`,14,a*0.9);
+    }
+  }
+
+  function drawPlayer(){
+    // trail
+    for(let i=0;i<player.trail.length;i++){
+      const t = player.trail[i];
+      const a = (i/player.trail.length)*0.4;
+      glowCircle(t.x,t.y, player.r*(i/player.trail.length)*0.9, 'rgba(127,252,216,1)', 18, a);
+    }
+    const blink = invuln>0 && Math.floor(elapsed*12)%2===0;
+    if(!blink){
+      const pulse = 1 + Math.sin(elapsed*4)*0.08;
+      glowCircle(player.x,player.y, player.r*pulse*1.6, 'rgba(127,252,216,1)', 40, 0.35);
+      glowCircle(player.x,player.y, player.r*pulse, 'rgba(180,255,235,1)', 30, 1);
+      ctx.fillStyle='#ffffff';
+      ctx.beginPath(); ctx.arc(player.x,player.y, player.r*0.42,0,6.283); ctx.fill();
+    }
+  }
+
+  function render(){
+    ctx.save();
+    if(shake>0.2){
+      ctx.translate(rand(-shake,shake), rand(-shake,shake));
+    }
+    drawBackground();
+    drawSnow();
+    if(state==='play' || state==='over'){
+      drawSpores();
+      drawParticles();
+      drawJellies();
+      drawPlayer();
+    }
+    ctx.restore();
+  }
+
+  // ---- loop ----
+  let last = performance.now();
+  function frame(now){
+    let dt = (now - last)/1000; last = now;
+    if(dt > 0.05) dt = 0.05; // clamp big gaps
+    if(state==='play') update(dt);
+    else {
+      // keep snow alive on menus
+      elapsed += dt;
+      for(const f of snow){ f.y -= f.s*dt; if(f.y<-4){f.y=H+4;f.x=rand(0,W);} }
+    }
+    render();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ---- flow ----
+  function start(){
+    reset();
+    state = 'play';
+    startScreen.classList.remove('show');
+    overScreen.classList.remove('show');
+    hud.classList.add('show');
+  }
+  function gameOver(){
+    state = 'over';
+    bestScore = Math.max(bestScore, score);
+    burst(player.x,player.y,'127,252,216',40,320);
+    shake = 16;
+    hud.classList.remove('show');
+    document.getElementById('finalScore').textContent = score;
+    document.getElementById('finalDepth').textContent = Math.round(depth)+'m';
+    document.getElementById('bestScore').textContent = bestScore;
+    // small delay so the death burst reads before the overlay
+    setTimeout(()=> overScreen.classList.add('show'), 650);
+  }
+
+  document.getElementById('startBtn').addEventListener('click', start);
+  document.getElementById('againBtn').addEventListener('click', start);
+  // space/enter to (re)start
+  window.addEventListener('keydown', e => {
+    if((e.key===' '||e.key==='Enter') && state!=='play'){ e.preventDefault(); start(); }
+  });
+})();
+</script>
+</body>
+</html>
