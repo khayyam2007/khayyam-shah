@@ -139,10 +139,65 @@ html[data-theme="light"] .phoneNotch{background:#111;}
 
 /* ---------- BLOCK WRAPPER ---------- */
 .blk{position:relative; min-height:20px;}
-.blk>.blkInner{outline:1px dashed transparent; outline-offset:2px; border-radius:6px; transition:outline-color .1s;}
+.blk>.blkInner{
+  outline:1px dashed transparent; outline-offset:2px; border-radius:6px;
+  transition:outline-color .15s, box-shadow .15s, transform .15s;
+}
 .blk:hover>.blkInner{outline-color:rgba(124,107,255,.35);}
 .blk.selected>.blkInner{outline:2px solid var(--accent1); outline-offset:2px;}
 #layout.preview .blk>.blkInner{outline:none !important;}
+
+/* -- tilt on hover (editor only) -- */
+#layout:not(.preview) .blk:hover>.blkInner{
+  transform:perspective(600px) rotateX(0.6deg) rotateY(-0.4deg) scale(1.005);
+  box-shadow:0 6px 24px rgba(0,0,0,.18);
+}
+#layout:not(.preview) .blk.selected>.blkInner{
+  transform:none;
+  box-shadow:0 0 0 2px var(--accent1);
+}
+
+/* -- entrance animation -- */
+@keyframes blkIn{
+  from{opacity:0; transform:translateY(14px) scale(.97);}
+  to  {opacity:1; transform:translateY(0)    scale(1);}
+}
+.blk.blkEnter>.blkInner{
+  animation:blkIn .32s cubic-bezier(.22,1,.36,1) forwards;
+}
+
+/* -- delete animation -- */
+@keyframes blkOut{
+  from{opacity:1; transform:scale(1);}
+  to  {opacity:0; transform:scale(.92) translateY(8px);}
+}
+.blk.blkExit>.blkInner{
+  animation:blkOut .22s ease-in forwards;
+  pointer-events:none;
+}
+
+/* -- drag ghost -- */
+.blk.dragging>.blkInner{opacity:.35; outline-color:var(--accent1)!important;}
+
+/* -- drop indicator line -- */
+.dropLine{
+  height:3px; border-radius:3px; margin:2px 0;
+  background:linear-gradient(90deg,var(--accent1),var(--accent2));
+  box-shadow:0 0 8px var(--accent1);
+  animation:dropLinePulse .7s ease-in-out infinite alternate;
+  pointer-events:none;
+}
+@keyframes dropLinePulse{
+  from{opacity:.7;} to{opacity:1;}
+}
+
+/* -- improved drag-over states -- */
+.blk.dragOverTop>.blkInner{box-shadow:0 -3px 0 0 var(--accent2);}
+.blk.dragOverBottom>.blkInner{box-shadow:0 3px 0 0 var(--accent2);}
+.blk.dragOverIn>.blkInner{
+  outline:2px solid var(--accent2) !important;
+  background:rgba(255,107,216,.04);
+}
 
 .blkToolbar{
   position:absolute; top:-13px; right:4px; display:none; gap:3px; z-index:30;
@@ -152,14 +207,44 @@ html[data-theme="light"] .phoneNotch{background:#111;}
 .blkToolbar button{
   width:22px; height:22px; border-radius:6px; border:1px solid var(--ctlBorder); background:var(--surface);
   color:var(--text); font-size:11px; display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow);
+  transition:border-color .12s, transform .1s;
 }
-.blkToolbar button:hover{border-color:var(--accent1);}
+.blkToolbar button:hover{border-color:var(--accent1); transform:scale(1.15);}
 .blkToolbar button.del:hover{color:var(--bad); border-color:var(--bad);}
 .blkToolbar .handle{cursor:grab;}
 
-.blk.dragOverTop>.blkInner{box-shadow:0 -3px 0 0 var(--accent2);}
-.blk.dragOverBottom>.blkInner{box-shadow:0 3px 0 0 var(--accent2);}
-.blk.dragOverIn>.blkInner{outline:2px solid var(--accent2) !important;}
+/* -- ripple on blkButton -- */
+.blkButton{position:relative; overflow:hidden;}
+.blkRipple{
+  position:absolute; border-radius:50%;
+  background:rgba(255,255,255,.35);
+  transform:scale(0);
+  animation:rippleAnim .5s linear;
+  pointer-events:none;
+}
+@keyframes rippleAnim{
+  to{transform:scale(4); opacity:0;}
+}
+
+/* -- palette search -- */
+#paletteSearch{
+  width:100%; border:1px solid var(--ctlBorder); background:var(--ctlBg); color:var(--text);
+  border-radius:9px; padding:8px 11px 8px 32px; font-size:12.5px; margin-bottom:10px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238d8da0' stroke-width='2.5'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:10px center; outline:none;
+  transition:border-color .15s;
+}
+#paletteSearch:focus{border-color:var(--accent1);}
+
+/* -- stagger canvas load -- */
+@keyframes staggerIn{
+  from{opacity:0; transform:translateY(10px);}
+  to  {opacity:1; transform:none;}
+}
+.blk.staggerLoad>.blkInner{
+  opacity:0;
+  animation:staggerIn .4s cubic-bezier(.22,1,.36,1) forwards;
+}
 
 /* container block */
 .blkContainer{display:flex; gap:12px; padding:14px; border-radius:8px; min-height:44px;}
@@ -280,6 +365,7 @@ input[type=range]::-moz-range-thumb{
     <div class="pane" id="sidebar">
       <div class="paneHead">Blocks</div>
       <div class="paneBody">
+        <input id="paletteSearch" type="text" placeholder="Search blocks…" oninput="filterPalette(this.value)">
         <div class="blockGrid" id="blockPalette"></div>
 
         <div class="paneHead" style="padding-left:0;">Saved Pages</div>
@@ -401,13 +487,33 @@ function cloneBlock(b){
 function renderPalette(){
   const wrap = $('blockPalette');
   wrap.innerHTML = '';
-  blockDefs.forEach(def=>{
+  blockDefs.forEach((def, i)=>{
     const card = document.createElement('div');
     card.className = 'blockCard';
+    card.dataset.type = def.type;
+    card.dataset.label = def.label.toLowerCase();
     card.draggable = true;
     card.innerHTML = `<span class="ic">${def.ic}</span>${def.label}`;
-    card.ondragstart = e=>{ dragData = {kind:'new', type:def.type}; e.dataTransfer.effectAllowed='copy'; e.dataTransfer.setData('text/plain','new'); };
+    card.style.animationDelay = (i*28)+'ms';
+    card.style.opacity = '0';
+    card.style.animation = `staggerIn .35s cubic-bezier(.22,1,.36,1) ${i*28}ms forwards`;
+    card.ondragstart = e=>{
+      dragData = {kind:'new', type:def.type};
+      e.dataTransfer.effectAllowed='copy';
+      e.dataTransfer.setData('text/plain','new');
+      card.style.opacity = '.5';
+      card.style.transform = 'scale(.95)';
+    };
+    card.ondragend = ()=>{ card.style.opacity=''; card.style.transform=''; };
     wrap.appendChild(card);
+  });
+}
+function filterPalette(q){
+  const term = q.toLowerCase().trim();
+  document.querySelectorAll('#blockPalette .blockCard').forEach(card=>{
+    const match = !term || card.dataset.label.includes(term) || card.dataset.type.includes(term);
+    card.style.display = match ? '' : 'none';
+    if(match){ card.style.animation='none'; card.style.opacity='1'; }
   });
 }
 
@@ -455,9 +561,19 @@ function renderCanvasTree(){
     }
     canvasRoot.appendChild(empty);
   } else {
-    root.children.forEach(child=> canvasRoot.appendChild(renderBlock(child)));
+    root.children.forEach((child, i)=>{
+      const el = renderBlock(child);
+      // stagger only on full re-render, not single-block updates
+      if(!previewMode && renderCanvasTree._stagger){
+        el.classList.add('staggerLoad');
+        el.querySelector('.blkInner') && (el.querySelector('.blkInner').style.animationDelay = (i*55)+'ms');
+      }
+      canvasRoot.appendChild(el);
+    });
+    renderCanvasTree._stagger = false;
   }
 }
+renderCanvasTree._stagger = false;
 
 function renderBlock(block){
   const wrap = document.createElement('div');
@@ -475,7 +591,14 @@ function renderBlock(block){
     toolbar.querySelector('.del').onclick = e=>{ e.stopPropagation(); deleteBlock(block.id); };
     wrap.appendChild(toolbar);
 
-    wrap.ondragstart = e=>{ e.stopPropagation(); dragData = {kind:'move', id:block.id}; e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain','move'); };
+    wrap.ondragstart = e=>{
+      e.stopPropagation();
+      dragData = {kind:'move', id:block.id};
+      e.dataTransfer.effectAllowed='move';
+      e.dataTransfer.setData('text/plain','move');
+      requestAnimationFrame(()=>wrap.classList.add('dragging'));
+    };
+    wrap.ondragend = ()=>{ wrap.classList.remove('dragging'); };
     wrap.ondragover = e=>{
       e.preventDefault(); e.stopPropagation();
       const r = wrap.getBoundingClientRect();
@@ -577,6 +700,16 @@ function renderContent(block){
     btn.style.fontSize = p.fontSize+'px';
     btn.style.fontWeight = p.fweight;
     makeEditable(btn, block, v=>{ p.label=v; });
+    // ripple in preview
+    btn.addEventListener('pointerdown', e=>{
+      const r = btn.getBoundingClientRect();
+      const size = Math.max(r.width, r.height)*2;
+      const rip = document.createElement('span');
+      rip.className = 'blkRipple';
+      rip.style.cssText = `width:${size}px;height:${size}px;left:${e.clientX-r.left-size/2}px;top:${e.clientY-r.top-size/2}px;`;
+      btn.appendChild(rip);
+      rip.addEventListener('animationend',()=>rip.remove());
+    });
     wrap.appendChild(btn);
     return wrap;
   }
@@ -786,6 +919,11 @@ function handleDrop(data, targetId, pos){
   dragData = null;
   selectedId = block.id;
   render();
+  // entrance animation on freshly dropped block
+  requestAnimationFrame(()=>{
+    const el = document.querySelector(`.blk[data-id="${block.id}"]`);
+    if(el){ el.classList.add('blkEnter'); el.scrollIntoView({behavior:'smooth',block:'nearest'}); el.addEventListener('animationend',()=>el.classList.remove('blkEnter'),{once:true}); }
+  });
 }
 
 function duplicateBlock(id){
@@ -799,8 +937,17 @@ function duplicateBlock(id){
   render();
 }
 function deleteBlock(id){
-  const removed = removeById(id);
-  if(removed){ selectedId = removed.parent ? removed.parent.id : 'root'; render(); }
+  const el = document.querySelector(`.blk[data-id="${id}"]`);
+  const doDelete = ()=>{
+    const removed = removeById(id);
+    if(removed){ selectedId = removed.parent ? removed.parent.id : 'root'; render(); }
+  };
+  if(el){
+    el.classList.add('blkExit');
+    el.addEventListener('animationend', doDelete, {once:true});
+  } else {
+    doDelete();
+  }
 }
 
 /* ================= PROPERTIES PANEL ================= */
@@ -1092,6 +1239,7 @@ function newProject(){
   if(root.children.length && !confirm('Start a new page? Unsaved changes will be lost.')) return;
   root = makeContainer('column', {padding:24, gap:18, minH:400, bg:'transparent'});
   selectedId = 'root';
+  renderCanvasTree._stagger = true;
   render();
 }
 function saveProject(){
@@ -1167,12 +1315,54 @@ function exportHTML(){
   .blk{display:contents;}
   .blkInner{display:contents;}
   .blkToolbar{display:none!important;}
+
+  /* scroll-reveal */
+  .reveal{opacity:0;transform:translateY(22px);transition:opacity .55s cubic-bezier(.22,1,.36,1),transform .55s cubic-bezier(.22,1,.36,1);}
+  .reveal.visible{opacity:1;transform:none;}
+
+  /* button ripple */
+  .blkButton{position:relative;overflow:hidden;cursor:pointer;}
+  .blkButton .rip{position:absolute;border-radius:50%;background:rgba(255,255,255,.35);transform:scale(0);animation:rip .5s linear;pointer-events:none;}
+  @keyframes rip{to{transform:scale(4);opacity:0;}}
+
+  /* smooth hover lift on buttons */
+  .blkButton:hover{filter:brightness(1.1);transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.25);transition:all .2s;}
+  .blkButton:active{transform:translateY(0);filter:brightness(.95);}
+
+  /* image fade in */
+  img{opacity:0;transition:opacity .5s ease;}
+  img.loaded{opacity:1;}
 </style>
 </head>
 <body>
 <div id="page">
 ${canvasHTML}
 </div>
+<script>
+// Scroll-reveal
+const revealEls = document.querySelectorAll('#page > *');
+revealEls.forEach(el=>el.classList.add('reveal'));
+const io = new IntersectionObserver(entries=>{
+  entries.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add('visible'); io.unobserve(e.target); } });
+},{threshold:0.12});
+revealEls.forEach(el=>io.observe(el));
+
+// Button ripple
+document.querySelectorAll('.blkButton').forEach(btn=>{
+  btn.addEventListener('pointerdown',e=>{
+    const r=btn.getBoundingClientRect(),size=Math.max(r.width,r.height)*2;
+    const rip=document.createElement('span'); rip.className='rip';
+    rip.style.cssText='width:'+size+'px;height:'+size+'px;left:'+(e.clientX-r.left-size/2)+'px;top:'+(e.clientY-r.top-size/2)+'px;';
+    btn.appendChild(rip); rip.addEventListener('animationend',()=>rip.remove());
+  });
+});
+
+// Image fade-in
+document.querySelectorAll('img').forEach(img=>{
+  if(img.complete) img.classList.add('loaded');
+  else img.addEventListener('load',()=>img.classList.add('loaded'));
+});
+<\/script>
 </body>
 </html>`;
 
@@ -1198,7 +1388,7 @@ function renderSaved(){
     const row = document.createElement('div');
     row.className = 'savedItem';
     row.innerHTML = `<span class="name">${escapeHtml(item.name)}</span><button title="Load">📂</button><button class="del" title="Delete">🗑</button>`;
-    row.querySelector('button[title="Load"]').onclick = ()=>{ root = JSON.parse(JSON.stringify(item.tree)); selectedId='root'; render(); flash('Loaded'); };
+    row.querySelector('button[title="Load"]').onclick = ()=>{ root = JSON.parse(JSON.stringify(item.tree)); selectedId='root'; renderCanvasTree._stagger=true; render(); flash('Loaded'); };
     row.querySelector('.del').onclick = ()=>{ setSaves(getSaves().filter(x=>x.id!==item.id)); renderSaved(); };
     wrap.appendChild(row);
   });
