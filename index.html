@@ -72,19 +72,28 @@ a{color:inherit;}
 .pillbtn.primary{background:#ffffff; border-color:transparent; color:#000000;}
 
 /* ---------- LAYOUT ---------- */
-#layout{flex:1; display:grid; grid-template-columns:230px 1fr 300px; min-height:0;}
+#layout{flex:1; display:grid; grid-template-columns:230px 1fr 300px; min-height:0; overflow:hidden;}
 #layout.preview #sidebar,#layout.preview #panel{display:none;}
 #layout.preview{grid-template-columns:1fr;}
-.pane{min-width:0; display:flex; flex-direction:column;}
-#sidebar{background:var(--surface); border-right:1px solid var(--border);}
-#panel{background:var(--surface); border-left:1px solid var(--border);}
-#stage{background:var(--bg); overflow-y:auto;}
+.pane{min-width:0; display:flex; flex-direction:column; min-height:0;}
+#sidebar{background:var(--surface); border-right:1px solid var(--border); overflow:hidden; display:flex; flex-direction:column;}
+#panel{background:var(--surface); border-left:1px solid var(--border); overflow:hidden; display:flex; flex-direction:column;}
+#stage{background:var(--bg); overflow-y:auto; -webkit-overflow-scrolling:touch;}
 
+/* both sidebars scroll independently */
 .paneHead{
   padding:15px 15px 9px; font-size:10.5px; font-weight:800; text-transform:uppercase;
-  letter-spacing:1px; color:var(--muted); flex:none;
+  letter-spacing:1px; color:var(--muted); flex:none; background:var(--surface);
+  position:sticky; top:0; z-index:10;
 }
-.paneBody{flex:1; overflow-y:auto; padding:0 13px 16px;}
+.paneBody{
+  flex:1; overflow-y:auto; overflow-x:hidden; padding:0 13px 24px;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:thin; scrollbar-color:var(--border) transparent;
+}
+.paneBody::-webkit-scrollbar{width:4px;}
+.paneBody::-webkit-scrollbar-thumb{background:var(--border); border-radius:4px;}
+.paneBody::-webkit-scrollbar-track{background:transparent;}
 
 /* ---------- PALETTE ---------- */
 .blockGrid{display:grid; grid-template-columns:1fr 1fr 1fr; gap:7px; margin-bottom:6px;}
@@ -334,10 +343,88 @@ input[type=range]::-moz-range-thumb{
 }
 #toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
 
-@media(max-width:880px){
-  #layout{grid-template-columns:1fr; grid-template-rows:auto 1fr auto;}
-  #sidebar{border-right:none; border-bottom:1px solid var(--border); max-height:150px;}
-  #panel{border-left:none; border-top:1px solid var(--border); max-height:40vh;}
+/* ===== RESPONSIVE ===== */
+
+/* Tablet (≤900px) — collapse to sidebar drawers */
+@media(max-width:900px){
+  #layout{
+    grid-template-columns:1fr;
+    grid-template-rows:1fr;
+    position:relative;
+  }
+  #layout.preview #sidebar,
+  #layout.preview #panel{ display:none; }
+
+  #sidebar, #panel{
+    position:fixed; top:58px; bottom:60px;
+    width:min(290px,85vw); z-index:60;
+    transform:translateX(-110%);
+    transition:transform .28s cubic-bezier(.22,1,.36,1);
+    box-shadow:4px 0 32px rgba(0,0,0,.35);
+    overflow:hidden; display:flex; flex-direction:column;
+  }
+  #sidebar{ left:0; border-right:1px solid var(--border); border-left:none; }
+  #panel  { right:0; left:auto; transform:translateX(110%); border-left:1px solid var(--border); border-right:none; }
+
+  #sidebar.open{ transform:translateX(0); }
+  #panel.open  { transform:translateX(0); }
+
+  /* dim backdrop when drawer open */
+  #drawerBackdrop{
+    display:none; position:fixed; inset:0; background:rgba(0,0,0,.45);
+    z-index:55; backdrop-filter:blur(2px);
+    animation:fadeIn .2s ease;
+  }
+  #drawerBackdrop.show{ display:block; }
+  @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+
+  #stage{ grid-column:1; grid-row:1; }
+
+  /* bottom tab bar */
+  #mobileNav{
+    display:flex; position:fixed; bottom:0; left:0; right:0; height:60px;
+    background:var(--surface); border-top:1px solid var(--border);
+    z-index:70; padding:0 8px; gap:4px; align-items:stretch;
+  }
+  .mTab{
+    flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:3px; border:none; background:transparent; color:var(--muted);
+    font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.5px;
+    border-radius:10px; transition:color .15s, background .15s; padding:6px 4px;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .mTab .mIc{ font-size:18px; line-height:1; }
+  .mTab.active{ color:var(--accent1); background:rgba(124,107,255,.1); }
+  .mTab:active{ transform:scale(.93); }
+
+  #stageInner{ padding:16px 8px 80px; }
+  .deviceFrame.web{ width:min(680px,96vw); }
+  .deviceFrame.mobile{ width:min(360px,94vw); }
+
+  /* hide desktop-only topbar labels on small screens */
+  .pillbtn:not(.primary){ display:none; }
+  #topbar{ gap:8px; padding:0 10px; }
+  #deviceSwitch button{ padding:6px 10px; }
+}
+
+/* Mobile (≤480px) — tighten further */
+@media(max-width:480px){
+  #brand span:last-child{ display:none; } /* hide "BlockCraft" text, keep icon */
+  #deviceSwitch{ display:none; }         /* remove web/mobile toggle from topbar */
+  .iconbtn{ width:32px; height:32px; font-size:14px; }
+  #topbar{ height:52px; gap:6px; }
+  #sidebar, #panel{ top:52px; bottom:60px; width:min(310px,92vw); }
+  .blockGrid{ grid-template-columns:1fr 1fr; }
+  .blockCard{ padding:8px 4px; font-size:9.5px; }
+  .blockCard .ic{ font-size:15px; }
+  #stageInner{ padding:10px 4px 80px; }
+  .deviceFrame.web{ width:100%; border-radius:0; border-left:none; border-right:none; }
+}
+
+/* Desktop: hide mobile nav */
+@media(min-width:901px){
+  #mobileNav{ display:none; }
+  #drawerBackdrop{ display:none !important; }
 }
 </style>
 </head>
@@ -395,6 +482,26 @@ input[type=range]::-moz-range-thumb{
     </div>
   </div>
 </div>
+
+<div id="drawerBackdrop" onclick="closeDrawers()"></div>
+
+<nav id="mobileNav">
+  <button class="mTab active" id="mTabBlocks" onclick="openDrawer('sidebar')">
+    <span class="mIc">🧱</span>Blocks
+  </button>
+  <button class="mTab" id="mTabCanvas" onclick="closeDrawers()">
+    <span class="mIc">🖼</span>Canvas
+  </button>
+  <button class="mTab" id="mTabProps" onclick="openDrawer('panel')">
+    <span class="mIc">⚙️</span>Props
+  </button>
+  <button class="mTab" id="mTabPreview" onclick="mobileTogglePreview()">
+    <span class="mIc">👁</span>Preview
+  </button>
+  <button class="mTab" id="mTabExport" onclick="exportHTML()">
+    <span class="mIc">⬇</span>Export
+  </button>
+</nav>
 
 <div id="toast"></div>
 <div id="voiceHint"></div>
@@ -505,6 +612,7 @@ function renderPalette(){
       card.style.transform = 'scale(.95)';
     };
     card.ondragend = ()=>{ card.style.opacity=''; card.style.transform=''; };
+    if(window._attachCardTouch) window._attachCardTouch(card, def);
     wrap.appendChild(card);
   });
 }
@@ -534,6 +642,8 @@ function renderCanvasTree(){
   canvasRoot.onclick = e=>{ if(e.target===canvasRoot){ selectedId='root'; renderProps(); } };
   canvasRoot.ondragover = e=>{ e.preventDefault(); };
   canvasRoot.ondrop = e=>{ if(e.target===canvasRoot){ e.preventDefault(); handleDrop(dragData, 'root', 'in'); } };
+  // touch: mark as valid drop zone (touch engine uses elementFromPoint, no extra wiring needed)
+  canvasRoot.dataset.dropzone = 'root';
 
   if(root.children.length===0){
     const empty = document.createElement('div');
@@ -555,7 +665,7 @@ function renderCanvasTree(){
         btn.innerHTML = '<span>'+def.ic+'</span>'+def.label;
         btn.onmouseenter = ()=>{ btn.style.borderColor='var(--accent1)'; };
         btn.onmouseleave = ()=>{ btn.style.borderColor='var(--ctlBorder)'; };
-        btn.onclick = e=>{ e.stopPropagation(); const b=makeBlock(type); root.children.push(b); selectedId=b.id; render(); };
+        btn.onclick = e=>{ e.stopPropagation(); const b=makeBlock(type); root.children.push(b); selectedId=b.id; render(); if(window.innerWidth<=900) closeDrawers(); };
         qa.appendChild(btn);
       });
     }
@@ -581,7 +691,16 @@ function renderBlock(block){
   wrap.dataset.id = block.id;
   wrap.draggable = !previewMode;
 
-  wrap.onclick = e=>{ e.stopPropagation(); selectedId = block.id; renderProps(); document.querySelectorAll('.blk').forEach(el=>el.classList.toggle('selected', el.dataset.id===block.id)); };
+  wrap.onclick = e=>{
+    e.stopPropagation();
+    // skip click if it was the end of a touch drag
+    if(wrap._touchDragged){ wrap._touchDragged=false; return; }
+    selectedId = block.id;
+    renderProps();
+    document.querySelectorAll('.blk').forEach(el=>el.classList.toggle('selected', el.dataset.id===block.id));
+    // on mobile, open props drawer automatically
+    if(window.innerWidth<=900) openDrawer('panel');
+  };
 
   if(!previewMode){
     const toolbar = document.createElement('div');
@@ -599,6 +718,7 @@ function renderBlock(block){
       requestAnimationFrame(()=>wrap.classList.add('dragging'));
     };
     wrap.ondragend = ()=>{ wrap.classList.remove('dragging'); };
+    if(window._attachBlockTouch) window._attachBlockTouch(wrap, block.id);
     wrap.ondragover = e=>{
       e.preventDefault(); e.stopPropagation();
       const r = wrap.getBoundingClientRect();
@@ -1488,6 +1608,254 @@ function stopVoice(){
   $('voiceBtn').classList.remove('listening');
   hideVoiceHint();
 }
+
+/* ================= MOBILE DRAWERS ================= */
+function openDrawer(which){
+  const sidebar = $('sidebar'), panel = $('panel'), backdrop = $('drawerBackdrop');
+  const isMobile = window.innerWidth <= 900;
+  if(!isMobile) return;
+
+  if(which==='sidebar'){
+    sidebar.classList.add('open');
+    panel.classList.remove('open');
+    $('mTabBlocks').classList.add('active');
+    $('mTabCanvas').classList.remove('active');
+    $('mTabProps').classList.remove('active');
+  } else {
+    panel.classList.add('open');
+    sidebar.classList.remove('open');
+    $('mTabProps').classList.add('active');
+    $('mTabCanvas').classList.remove('active');
+    $('mTabBlocks').classList.remove('active');
+  }
+  backdrop.classList.add('show');
+}
+
+function closeDrawers(){
+  $('sidebar').classList.remove('open');
+  $('panel').classList.remove('open');
+  $('drawerBackdrop').classList.remove('show');
+  // set canvas tab active
+  document.querySelectorAll('.mTab').forEach(t=>t.classList.remove('active'));
+  $('mTabCanvas').classList.add('active');
+}
+
+function mobileTogglePreview(){
+  togglePreview();
+  const tab = $('mTabPreview');
+  tab.classList.toggle('active', previewMode);
+  if(previewMode) closeDrawers();
+}
+
+// close drawers on resize to desktop
+window.addEventListener('resize',()=>{
+  if(window.innerWidth>900){ closeDrawers(); }
+});
+
+/* ================= TOUCH DRAG ENGINE ================= */
+(function initTouchDrag(){
+  let ghost = null;       // floating clone following finger
+  let touchDragData = null;
+  let lastTarget = null;  // last .blk or #canvasRoot under finger
+  let longPressTimer = null;
+  const LONG_PRESS_MS = 180;
+
+  // CSS for the ghost
+  const style = document.createElement('style');
+  style.textContent = `
+    #touchGhost{
+      position:fixed; pointer-events:none; z-index:9999;
+      opacity:.82; border-radius:10px;
+      box-shadow:0 12px 40px rgba(0,0,0,.45);
+      outline:2px solid var(--accent1);
+      transform:scale(1.04) rotate(-1.5deg);
+      transition:transform .12s;
+      background:var(--surface);
+      max-width:260px; overflow:hidden;
+    }
+    .touchDropOver{ outline:2px solid var(--accent2) !important; background:rgba(255,107,216,.05); }
+    .touchDropTop { box-shadow:0 -3px 0 0 var(--accent2) !important; }
+    .touchDropBottom{ box-shadow:0 3px 0 0 var(--accent2) !important; }
+  `;
+  document.head.appendChild(style);
+
+  function createGhost(sourceEl, touchX, touchY){
+    removeGhost();
+    const rect = sourceEl.getBoundingClientRect();
+    ghost = sourceEl.cloneNode(true);
+    ghost.id = 'touchGhost';
+    ghost.removeAttribute('draggable');
+    ghost.querySelectorAll('.blkToolbar').forEach(t=>t.remove());
+    ghost.style.width  = Math.min(rect.width, 260)+'px';
+    ghost.style.height = Math.min(rect.height, 120)+'px';
+    ghost.style.left   = (touchX - rect.width/2)+'px';
+    ghost.style.top    = (touchY - rect.height/2)+'px';
+    document.body.appendChild(ghost);
+  }
+
+  function moveGhost(touchX, touchY){
+    if(!ghost) return;
+    const w = ghost.offsetWidth, h = ghost.offsetHeight;
+    ghost.style.left = (touchX - w/2)+'px';
+    ghost.style.top  = (touchY - h/2)+'px';
+  }
+
+  function removeGhost(){
+    if(ghost){ ghost.remove(); ghost = null; }
+  }
+
+  function clearHighlights(){
+    document.querySelectorAll('.touchDropOver,.touchDropTop,.touchDropBottom')
+      .forEach(el=>el.classList.remove('touchDropOver','touchDropTop','touchDropBottom'));
+  }
+
+  // Find the best drop target element under (x, y)
+  function getDropTarget(x, y){
+    if(ghost) ghost.style.display='none';
+    const el = document.elementFromPoint(x, y);
+    if(ghost) ghost.style.display='';
+    if(!el) return null;
+    const blk = el.closest('.blk');
+    if(blk) return blk;
+    const root = el.closest('#canvasRoot');
+    if(root) return root;
+    return null;
+  }
+
+  // Wire up touch events on a palette card
+  function attachCardTouch(card, def){
+    card.addEventListener('touchstart', e=>{
+      longPressTimer = setTimeout(()=>{
+        touchDragData = {kind:'new', type:def.type};
+        const t = e.touches[0];
+        createGhost(card, t.clientX, t.clientY);
+        card.style.opacity='.4';
+        // close drawer so canvas is visible
+        if(window.innerWidth<=900) closeDrawers();
+      }, LONG_PRESS_MS);
+    },{passive:true});
+
+    card.addEventListener('touchmove', e=>{
+      if(!touchDragData) return;
+      e.preventDefault();
+      const t = e.touches[0];
+      moveGhost(t.clientX, t.clientY);
+      clearHighlights();
+      const target = getDropTarget(t.clientX, t.clientY);
+      if(target) highlightTarget(target, t.clientY);
+      lastTarget = target;
+    },{passive:false});
+
+    card.addEventListener('touchend', e=>{
+      clearTimeout(longPressTimer);
+      if(!touchDragData){ return; }
+      e.preventDefault();
+      finishTouchDrop();
+      card.style.opacity='';
+    },{passive:false});
+
+    card.addEventListener('touchcancel', ()=>{
+      clearTimeout(longPressTimer);
+      cancelTouchDrag();
+      card.style.opacity='';
+    });
+  }
+
+  // Wire up touch events on a canvas block wrapper
+  function attachBlockTouch(wrap, blockId){
+    wrap.addEventListener('touchstart', e=>{
+      longPressTimer = setTimeout(()=>{
+        touchDragData = {kind:'move', id:blockId};
+        const t = e.touches[0];
+        createGhost(wrap, t.clientX, t.clientY);
+        wrap.style.opacity='.35';
+      }, LONG_PRESS_MS);
+    },{passive:true});
+
+    wrap.addEventListener('touchmove', e=>{
+      if(!touchDragData) return;
+      e.preventDefault();
+      const t = e.touches[0];
+      moveGhost(t.clientX, t.clientY);
+      clearHighlights();
+      const target = getDropTarget(t.clientX, t.clientY);
+      if(target) highlightTarget(target, t.clientY);
+      lastTarget = target;
+    },{passive:false});
+
+    wrap.addEventListener('touchend', e=>{
+      clearTimeout(longPressTimer);
+      if(!touchDragData){ return; }
+      e.preventDefault();
+      finishTouchDrop();
+      wrap.style.opacity='';
+    },{passive:false});
+
+    wrap.addEventListener('touchcancel', ()=>{
+      clearTimeout(longPressTimer);
+      cancelTouchDrag();
+      wrap.style.opacity='';
+    });
+  }
+
+  function highlightTarget(target, touchY){
+    if(target.id==='canvasRoot'){
+      target.style.outline='2px solid var(--accent1)';
+      setTimeout(()=>{ if(target) target.style.outline=''; }, 300);
+      return;
+    }
+    const rect = target.getBoundingClientRect();
+    const blkInner = target.querySelector('.blkInner') || target;
+    const relY = (touchY - rect.top) / rect.height;
+    const isContainer = target.dataset.id && (()=>{
+      const f = findIn(root, target.dataset.id);
+      return f && f.block.type==='container';
+    })();
+    if(isContainer && relY>0.28 && relY<0.72){
+      blkInner.classList.add('touchDropOver');
+    } else if(relY<=0.5){
+      blkInner.classList.add('touchDropTop');
+    } else {
+      blkInner.classList.add('touchDropBottom');
+    }
+  }
+
+  function finishTouchDrop(){
+    removeGhost();
+    clearHighlights();
+    if(!touchDragData || !lastTarget){ touchDragData=null; lastTarget=null; return; }
+
+    let targetId, pos;
+    if(lastTarget.id==='canvasRoot'){
+      targetId='root'; pos='in';
+    } else {
+      targetId = lastTarget.dataset.id;
+      const blkInner = lastTarget.querySelector('.blkInner') || lastTarget;
+      if(blkInner.classList.contains('touchDropOver')) pos='in';
+      else if(blkInner.classList.contains('touchDropTop')) pos='before';
+      else pos='after';
+    }
+
+    // plug into the existing drop system
+    dragData = touchDragData;
+    handleDrop(dragData, targetId, pos);
+
+    touchDragData = null;
+    lastTarget = null;
+    dragData = null;
+  }
+
+  function cancelTouchDrag(){
+    removeGhost();
+    clearHighlights();
+    touchDragData = null;
+    lastTarget = null;
+  }
+
+  // Expose so renderPalette and renderBlock can call these
+  window._attachCardTouch  = attachCardTouch;
+  window._attachBlockTouch = attachBlockTouch;
+})();
 
 /* ================= INIT ================= */
 renderPalette();
