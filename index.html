@@ -225,6 +225,23 @@ input[type=range]::-moz-range-thumb{
 }
 .deleteFull:hover{background:rgba(239,68,68,.16);}
 
+/* ---------- VOICE ---------- */
+#voiceBtn.listening{
+  border-color:#ef4444; color:#ef4444;
+  animation: voicePulse 1s ease-in-out infinite;
+}
+@keyframes voicePulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.5);}
+  50%{box-shadow:0 0 0 6px rgba(239,68,68,0);}
+}
+#voiceHint{
+  position:fixed; bottom:60px; left:50%; transform:translateX(-50%) translateY(20px);
+  background:var(--surface); border:1px solid var(--border); box-shadow:var(--shadow);
+  padding:9px 18px; border-radius:999px; font-size:12px; font-weight:700; color:var(--muted);
+  opacity:0; pointer-events:none; transition:.2s; z-index:200; white-space:nowrap;
+}
+#voiceHint.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
 #toast{
   position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--surface);
   border:1px solid var(--border); box-shadow:var(--shadow); padding:10px 18px; border-radius:999px; font-size:12.5px;
@@ -253,6 +270,7 @@ input[type=range]::-moz-range-thumb{
       <button class="pillbtn" onclick="newProject()">New</button>
       <button class="pillbtn" onclick="saveProject()">Save</button>
       <button class="pillbtn primary" onclick="clearSelectionHint()">Done</button>
+      <button class="iconbtn" id="voiceBtn" title="Voice input (select a text block first)" onclick="toggleVoice()">🎤</button>
       <button class="iconbtn" id="themeBtn" title="Theme" onclick="toggleTheme()">🌙</button>
     </div>
   </div>
@@ -292,6 +310,7 @@ input[type=range]::-moz-range-thumb{
 </div>
 
 <div id="toast"></div>
+<div id="voiceHint"></div>
 
 <script>
 /* ================= DATA MODEL ================= */
@@ -326,7 +345,7 @@ const blockDefs = [
 const defaultAdv = ()=>({mt:0, mb:0, opacity:100, borderW:0, borderColor:'#7c6bff', borderStyle:'solid', radius:0, shadow:false, shadowBlur:18, shadowY:6, shadowColor:'#000000'});
 
 function makeContainer(dir='column', extra={}){
-  return {id:nid(), type:'container', props:{direction:dir, gap:14, padding:16, align:'stretch', justify:'flex-start', bg:'transparent', minH:60, adv:defaultAdv(), ...extra}, children:[]};
+  return {id:nid(), type:'container', props:{direction:dir, gap:16, padding:16, align:'stretch', justify:'flex-start', bg:'transparent', minH:60, adv:defaultAdv(), ...extra}, children:[]};
 }
 function makeBlock(type){
   const def = blockDefs.find(d=>d.type===type);
@@ -340,6 +359,7 @@ function makeBlock(type){
 }
 
 let root = makeContainer('column', {padding:24, gap:18, minH:400, bg:'transparent'});
+/* gap:18 and padding:24 ensure elements are spaced from the very first drop */
 let selectedId = 'root';
 let device = 'web';
 let previewMode = false;
@@ -411,7 +431,27 @@ function renderCanvasTree(){
   if(root.children.length===0){
     const empty = document.createElement('div');
     empty.className = 'emptyCanvas';
-    empty.textContent = previewMode ? 'This page is empty.' : 'Drag blocks here from the left panel to start building your page.';
+    if(previewMode){
+      empty.textContent = 'This page is empty.';
+    } else {
+      empty.innerHTML = '<div><div style="font-size:32px;margin-bottom:12px;">🧱</div><div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:6px;">Drop a block here to get started</div><div style="font-size:12px;color:var(--muted);margin-bottom:18px;">Drag from the left panel, or click a quick-add below</div><div id="quickAdd" style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;"></div></div>';
+      empty.ondragover = e=>{ e.preventDefault(); empty.style.borderColor='var(--accent1)'; empty.style.background='rgba(124,107,255,.07)'; };
+      empty.ondragleave = ()=>{ empty.style.borderColor=''; empty.style.background=''; };
+      empty.ondrop = e=>{ e.preventDefault(); e.stopPropagation(); empty.style.borderColor=''; empty.style.background=''; handleDrop(dragData,'root','in'); };
+      const quickTypes = ['heading','text','button','image','container','divider'];
+      const qa = empty.querySelector('#quickAdd');
+      quickTypes.forEach(type=>{
+        const def = blockDefs.find(d=>d.type===type);
+        if(!def) return;
+        const btn = document.createElement('button');
+        btn.style.cssText = 'border:1px solid var(--ctlBorder);background:var(--ctlBg);color:var(--text);border-radius:9px;padding:7px 13px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:5px;cursor:pointer;';
+        btn.innerHTML = '<span>'+def.ic+'</span>'+def.label;
+        btn.onmouseenter = ()=>{ btn.style.borderColor='var(--accent1)'; };
+        btn.onmouseleave = ()=>{ btn.style.borderColor='var(--ctlBorder)'; };
+        btn.onclick = e=>{ e.stopPropagation(); const b=makeBlock(type); root.children.push(b); selectedId=b.id; render(); };
+        qa.appendChild(btn);
+      });
+    }
     canvasRoot.appendChild(empty);
   } else {
     root.children.forEach(child=> canvasRoot.appendChild(renderBlock(child)));
@@ -1087,6 +1127,92 @@ function flash(msg){
   t.classList.add('show');
   clearTimeout(flash._t);
   flash._t = setTimeout(()=> t.classList.remove('show'), 1600);
+}
+
+/* ================= VOICE INPUT ================= */
+let voiceRecog = null;
+let voiceActive = false;
+
+function showVoiceHint(msg, persist){
+  const h = $('voiceHint');
+  h.textContent = msg;
+  h.classList.add('show');
+  if(!persist){
+    clearTimeout(showVoiceHint._t);
+    showVoiceHint._t = setTimeout(()=>h.classList.remove('show'), 2200);
+  }
+}
+function hideVoiceHint(){ $('voiceHint').classList.remove('show'); }
+
+function toggleVoice(){
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SpeechRecognition){
+    flash('Voice not supported in this browser');
+    return;
+  }
+
+  if(voiceActive){
+    voiceRecog && voiceRecog.stop();
+    stopVoice();
+    return;
+  }
+
+  // Find the selected block and check it has editable text
+  const editableTypes = new Set(['heading','text','button','link','quote','code']);
+  const sel = selectedId && selectedId !== 'root' ? findIn(root, selectedId) : null;
+  if(!sel || !editableTypes.has(sel.block.type)){
+    flash('Select a text block first (Heading, Text, Button…)');
+    return;
+  }
+
+  voiceRecog = new SpeechRecognition();
+  voiceRecog.continuous = false;
+  voiceRecog.interimResults = true;
+  voiceRecog.lang = 'en-US';
+
+  const block = sel.block;
+  const p = block.props;
+  const originalText = p.content ?? p.label ?? '';
+
+  voiceRecog.onstart = ()=>{
+    voiceActive = true;
+    $('voiceBtn').classList.add('listening');
+    showVoiceHint('🎤 Listening… speak now', true);
+  };
+
+  voiceRecog.onresult = e=>{
+    let interim = '', final = '';
+    for(let i = e.resultIndex; i < e.results.length; i++){
+      const t = e.results[i][0].transcript;
+      e.results[i].isFinal ? (final += t) : (interim += t);
+    }
+    const preview = (originalText ? originalText + ' ' : '') + (final || interim);
+    showVoiceHint('🎤 ' + (final || interim || '…'), true);
+    // Live preview on canvas
+    if('content' in p) p.content = preview;
+    else if('label' in p) p.label = preview;
+    renderCanvasOnly();
+  };
+
+  voiceRecog.onend = ()=>{
+    stopVoice();
+    renderProps();
+  };
+
+  voiceRecog.onerror = e=>{
+    stopVoice();
+    if(e.error==='no-speech') flash('No speech detected — try again');
+    else if(e.error==='not-allowed') flash('Microphone access denied');
+    else flash('Voice error: ' + e.error);
+  };
+
+  voiceRecog.start();
+}
+
+function stopVoice(){
+  voiceActive = false;
+  $('voiceBtn').classList.remove('listening');
+  hideVoiceHint();
 }
 
 /* ================= INIT ================= */
